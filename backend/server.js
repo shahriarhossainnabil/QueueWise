@@ -5,6 +5,12 @@ require("dotenv").config();
 
 const userRoutes = require("./routes/userRoutes");
 const tokenRoutes = require("./routes/tokenRoutes");
+console.log(
+  "REGISTERED TOKEN ROUTES:",
+  tokenRoutes.stack
+    .filter((layer) => layer.route)
+    .map((layer) => layer.route.path)
+);
 console.log("Token routes loaded successfully");
 
 const app = express();
@@ -28,6 +34,14 @@ app.get("/test-route", (req, res) => {
   res.send("TEST ROUTE WORKS");
 });
 app.use("/api/users", userRoutes);
+app.use((req, res, next) => {
+  console.log("REQUEST RECEIVED:", req.method, req.originalUrl);
+  next();
+});
+app.use((req, res, next) => {
+  console.log("REQUEST RECEIVED:", req.method, req.originalUrl);
+  next();
+});
 app.use("/api/tokens", tokenRoutes);
 app.get("/debug-routes", (req, res) => {
   res.json({

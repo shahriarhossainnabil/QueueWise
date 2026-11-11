@@ -1,12 +1,17 @@
-import { useState } from "react";
 
-function Login({ onLoginSuccess }) {
+import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+
+function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
 
+  const navigate = useNavigate();
+
   const handleLogin = async (e) => {
     e.preventDefault();
+    setMessage("");
 
     try {
       const response = await fetch("http://localhost:5000/api/users/login", {
@@ -14,21 +19,16 @@ function Login({ onLoginSuccess }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
-if (response.ok) {
-  localStorage.setItem("queuewiseUser", JSON.stringify(data.user));
-  setMessage(`Welcome, ${data.user.name}!`);
-  onLoginSuccess?.(data.user);
-}
-       else {
-        setMessage(data.message);
+      if (response.ok) {
+        localStorage.setItem("queuewiseUser", JSON.stringify(data.user));
+        navigate("/");
+      } else {
+        setMessage(data.message || "Login failed.");
       }
     } catch (error) {
       setMessage("Could not connect to server.");
@@ -36,34 +36,39 @@ if (response.ok) {
   };
 
   return (
-    <div style={{ maxWidth: "400px", margin: "50px auto" }}>
-      <h2>Login to QueueWise</h2>
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2>Welcome Back</h2>
+        <p>Login to continue with QueueWise.</p>
 
-      <form onSubmit={handleLogin}>
-        <input
-          type="email"
-          placeholder="Email Address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <form onSubmit={handleLogin}>
+          <input
+            type="email"
+            placeholder="Email Address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
 
-        <br />
-        <br />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <button type="submit">Login to QueueWise</button>
+        </form>
 
-        <br />
-        <br />
+        {message && <p className="auth-message">{message}</p>}
 
-        <button type="submit">Login</button>
-      </form>
+        <p className="auth-switch">
+          Don't have an account? <Link to="/register">Create Account</Link>
+        </p>
 
-      {message && <p>{message}</p>}
+        <Link className="auth-home-link" to="/">Back to Home</Link>
+      </div>
     </div>
   );
 }

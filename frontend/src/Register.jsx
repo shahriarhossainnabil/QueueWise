@@ -1,4 +1,6 @@
+
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 function Register() {
   const [name, setName] = useState("");
@@ -8,6 +10,7 @@ function Register() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    setMessage("");
 
     try {
       const response = await fetch("http://localhost:5000/api/users/register", {
@@ -25,12 +28,12 @@ function Register() {
       const data = await response.json();
 
       if (response.ok) {
-        setMessage("Registration successful!");
+        setMessage("Registration successful! Please login.");
         setName("");
         setEmail("");
         setPassword("");
       } else {
-        setMessage(data.message);
+        setMessage(data.message || "Registration failed.");
       }
     } catch (error) {
       setMessage("Could not connect to server.");
@@ -38,44 +41,47 @@ function Register() {
   };
 
   return (
-    <div style={{ maxWidth: "400px", margin: "50px auto" }}>
-      <h2>Create QueueWise Account</h2>
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2>Create Your Account</h2>
+        <p>Join QueueWise for a smarter visiting experience.</p>
 
-      <form onSubmit={handleRegister}>
-        <input
-          type="text"
-          placeholder="Your Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <form onSubmit={handleRegister}>
+          <input
+            type="text"
+            placeholder="Full Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
 
-        <br />
-        <br />
+          <input
+            type="email"
+            placeholder="Email Address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
 
-        <input
-          type="email"
-          placeholder="Email Address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+          <input
+            type="password"
+            placeholder="Create Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
 
-        <br />
-        <br />
+          <button type="submit">Create Account</button>
+        </form>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        {message && <p className="auth-message">{message}</p>}
 
-        <br />
-        <br />
+        <p className="auth-switch">
+          Already have an account? <Link to="/login">Login</Link>
+        </p>
 
-        <button type="submit">Create Account</button>
-      </form>
-
-      {message && <p>{message}</p>}
+        <Link className="auth-home-link" to="/">Back to Home</Link>
+      </div>
     </div>
   );
 }

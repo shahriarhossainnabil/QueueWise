@@ -2,8 +2,10 @@ import "./App.css";
 import { useState, useEffect, useRef } from "react";
 import Register from "./Register";
 import Login from "./Login";
+import { BrowserRouter, Routes, Route, Navigate , useNavigate } from "react-router-dom";
 
-function App() {
+function Home() {
+    const navigate = useNavigate();
  const [showQueue, setShowQueue] = useState(false);
  const queueSectionRef = useRef(null);
 
@@ -30,6 +32,65 @@ function App() {
  const [queuePosition, setQueuePosition] = useState(null);
 const [peopleAhead, setPeopleAhead] = useState(null);
 const [totalWaiting, setTotalWaiting] = useState(null);
+// Dynamic Waiting Time
+const [waitingEstimate, setWaitingEstimate] = useState(null);
+const [estimateLoading, setEstimateLoading] = useState(false);
+const [estimateError, setEstimateError] = useState("");
+// Average Service Time
+const [averageTimes, setAverageTimes] = useState([]);
+const [averageLoading, setAverageLoading] = useState(false);
+const [averageError, setAverageError] = useState("");
+const loadAverageTimes = async () => {
+  setAverageLoading(true);
+  setAverageError("");
+
+  try {
+    const response = await fetch(
+      "http://localhost:5000/api/tokens/average-time"
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Could not load average service time.");
+    }
+
+    setAverageTimes(data.averageTimes || []);
+  } catch (error) {
+    setAverageError(error.message || "Could not connect to backend.");
+  } finally {
+    setAverageLoading(false);
+  }
+};
+// Load Dynamic Waiting Time Estimate
+const loadWaitingEstimate = async (tokenNumber) => {
+  if (!tokenNumber) return;
+
+  setEstimateLoading(true);
+  setEstimateError("");
+  setWaitingEstimate(null);
+
+  try {
+    const response = await fetch(
+      `http://localhost:5000/api/tokens/estimate?tokenNumber=${encodeURIComponent(tokenNumber)}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Could not calculate waiting time.");
+    }
+
+    setWaitingEstimate(data);
+  } catch (error) {
+    setEstimateError(error.message || "Could not connect to backend.");
+  } finally {
+    setEstimateLoading(false);
+  }
+};
+useEffect(() => {
+  loadAverageTimes();
+}, []);
  
 useEffect(() => {
   const loadMyToken = async () => {
@@ -47,7 +108,21 @@ useEffect(() => {
       const data = await response.json();
 
       if (response.ok && data.tokens?.length > 0) {
-        setMyToken(data.tokens[0].tokenNumber);
+        const activeStatuses = ["Waiting", "Serving"];
+
+        const savedToken =
+          data.tokens.find(
+            (token) =>
+              token.service === selectedService &&
+              activeStatuses.includes(token.status)
+          ) ||
+          data.tokens.find((token) =>
+            activeStatuses.includes(token.status)
+          ) ||
+          data.tokens[0];
+
+        setMyToken(savedToken.tokenNumber);
+        loadWaitingEstimate(savedToken.tokenNumber);
       }
     } catch (error) {
       console.error("Could not load saved token:", error);
@@ -83,6 +158,9 @@ useEffect(() => {
   },
 };
  const currentQueue = queueData[selectedService];
+
+
+
   return (
     <div className="app">
       {showRegister && (
@@ -129,9 +207,10 @@ useEffect(() => {
     <button
       className="nav-login"
       onClick={() => {
-        localStorage.removeItem("queuewiseUser");
+        localStorage.removeItem("queueWiseUser");
         setLoggedInUser(null);
         setMyToken(null);
+        navigate("/login");
       }}
     >
       Logout
@@ -141,22 +220,16 @@ useEffect(() => {
   <>
     <button
       className="nav-login"
-      onClick={() => {
-        setShowRegister(true);
-        setShowLogin(false);
-      }}
+      onClick={() => navigate("/login")}
     >
-      Register
+      Login
     </button>
 
     <button
       className="nav-login"
-      onClick={() => {
-        setShowLogin(true);
-        setShowRegister(false);
-      }}
+      onClick={() => navigate("/register")}
     >
-      Login
+      Register
     </button>
   </>
 )}
@@ -417,7 +490,8 @@ if (response.ok) {
   setQueuePosition(null);
   setPeopleAhead(null);
   setTotalWaiting(null);
-
+  setWaitingEstimate(null);
+  setEstimateError("");
   const positionResponse = await fetch(
     `http://localhost:5000/api/tokens/position?tokenNumber=${encodeURIComponent(
       data.token.tokenNumber
@@ -431,6 +505,7 @@ if (response.ok) {
     setPeopleAhead(positionData.peopleAhead);
     setTotalWaiting(positionData.totalWaiting);
   }
+    loadWaitingEstimate(data.token.tokenNumber);
 
   alert("Token saved successfully!");
 } else {
@@ -462,10 +537,115 @@ if (response.ok) {
   </div>
 )}
 
+{/* DYNAMIC WAITING TIME ESTIMATE */}
+{myToken && (
+  <div className="my-token estimate-card">
+    <span>SMART WAITING ESTIMATE</span>
+
+    {estimateLoading ? (
+      <p>Calculating your waiting time...</p>
+    ) : estimateError ? (
+      <p>{estimateError}</p>
+    ) : waitingEstimate ? (
+      waitingEstimate.estimateAvailable ? (
+        <>
+          <p>People Ahead: {waitingEstimate.peopleAhead ?? "--"}</p>
+          <p>Average Service Time: {waitingEstimate.averageServiceTime} min</p>
+          <p>
+            Estimated Waiting Time: {waitingEstimate.estimatedWaitingTime} min
+          </p>
+          <p>
+            Expected Serving Time:{" "}
+            {waitingEstimate.expectedServingTime
+              ? new Date(waitingEstimate.expectedServingTime).toLocaleString()
+              : "--"}
+          </p>
+        </>
+      ) : (
+        <p>{waitingEstimate.message}</p>
+      )
+    ) : (
+      <p>Waiting for estimate...</p>
+    )}
+
+    <button
+      className="average-refresh-btn"
+      onClick={() => loadWaitingEstimate(myToken)}
+      disabled={estimateLoading}
+    >
+      {estimateLoading ? "Calculating..." : "Refresh Estimate"}
+    </button>
+  </div>
+)}
+
+
     </div>
 
   </section>
 )}
+
+{/* ================= AVERAGE SERVICE TIME ================= */}
+
+<section className="average-time-section">
+
+  <div className="average-time-header">
+    <div>
+      <span className="section-tag">SERVICE ANALYTICS</span>
+      <h2>Average Service Time</h2>
+      <p>Actual average duration calculated from completed services.</p>
+    </div>
+
+    <button
+      className="average-refresh-btn"
+      onClick={loadAverageTimes}
+      disabled={averageLoading}
+    >
+      {averageLoading ? "Loading..." : "↻ Refresh"}
+    </button>
+  </div>
+
+  {averageLoading ? (
+    <p className="average-time-message">Loading service data...</p>
+  ) : averageError ? (
+    <p className="average-time-message">{averageError}</p>
+  ) : (
+    <div className="average-time-grid">
+      {[
+        "Medical Consultation",
+        "Diagnostic Test",
+        "Pharmacy Service",
+        "Billing / Payment",
+      ].map((service) => {
+        const result = averageTimes.find(
+          (item) => item.service === service
+        );
+
+        return (
+          <div className="average-time-card" key={service}>
+            <h3>{service}</h3>
+
+            {result ? (
+              <>
+                <strong className="average-time-value">
+                  {result.averageServiceTime} min
+                </strong>
+                <p>
+                  Based on {result.completedServices} completed service(s)
+                </p>
+              </>
+            ) : (
+              <>
+                <strong className="average-time-value">--</strong>
+                <p>Not enough completed data yet</p>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  )}
+
+</section>
 
 
         {/* ================= SERVICES ================= */}
@@ -717,6 +897,19 @@ if (response.ok) {
       </footer>
 
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
