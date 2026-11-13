@@ -29,6 +29,12 @@ function Home() {
   }
 }, [showQueue, selectedService]);
  const [myToken, setMyToken] = useState(null);
+ const [searchToken, setSearchToken] = useState("");
+const [trackedToken, setTrackedToken] = useState(null);
+const [trackedPosition, setTrackedPosition] = useState(null);
+const [trackedPeopleAhead, setTrackedPeopleAhead] = useState(null);
+const [trackLoading, setTrackLoading] = useState(false);
+const [trackError, setTrackError] = useState("");
  const [queuePosition, setQueuePosition] = useState(null);
 const [peopleAhead, setPeopleAhead] = useState(null);
 const [totalWaiting, setTotalWaiting] = useState(null);
@@ -116,6 +122,42 @@ const loadWaitingEstimate = async (tokenNumber) => {
     setEstimateError(error.message || "Could not connect to backend.");
   } finally {
     setEstimateLoading(false);
+  }
+};
+const handleTrackToken = async (e) => {
+  e.preventDefault();
+
+  if (!searchToken.trim()) {
+    setTrackError("Please enter a token number.");
+    setTrackedToken(null);
+    return;
+  }
+
+  setTrackLoading(true);
+  setTrackError("");
+  setTrackedToken(null);
+  setTrackedPosition(null);
+  setTrackedPeopleAhead(null);
+
+  try {
+    const response = await fetch(
+      `http://localhost:5000/api/tokens/position?tokenNumber=${encodeURIComponent(searchToken.trim())}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Token not found.");
+    }
+
+    setTrackedToken(searchToken.trim());
+    setTrackedPosition(data.position);
+    setTrackedPeopleAhead(data.peopleAhead);
+
+  } catch (error) {
+    setTrackError(error.message || "Could not connect to backend.");
+  } finally {
+    setTrackLoading(false);
   }
 };
 useEffect(() => {
@@ -536,6 +578,67 @@ useEffect(() => {
   >
     Get Token <span>→</span>
   </button>
+</div>
+{/* EXISTING TOKEN TRACKING */}
+
+<div className="token-action" style={{
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+  marginTop: "20px"
+}}>
+  <h3>Track Existing Token</h3>
+
+  <form
+    onSubmit={handleTrackToken}
+    style={{
+      display: "flex",
+      gap: "10px",
+      flexWrap: "wrap"
+    }}
+  >
+    <input
+      type="text"
+      value={searchToken}
+      onChange={(e) => setSearchToken(e.target.value)}
+      placeholder="Enter your token number"
+      style={{
+        flex: "1",
+        minWidth: "180px",
+        padding: "13px",
+        borderRadius: "8px",
+        border: "1px solid #ccc"
+      }}
+    />
+
+    <button
+      type="submit"
+      className="primary-btn"
+      disabled={trackLoading}
+    >
+      {trackLoading ? "Checking..." : "Track Token"}
+    </button>
+  </form>
+
+  {trackError && (
+    <p style={{
+      color: "#dc2626",
+      background: "#fef2f2",
+      padding: "12px",
+      borderRadius: "8px"
+    }}>
+      {trackError}
+    </p>
+  )}
+
+  {trackedToken && (
+    <div className="my-token">
+      <span>TRACKED TOKEN</span>
+      <strong>{trackedToken}</strong>
+      <p>Queue Position: {trackedPosition ?? "--"}</p>
+      <p>People Ahead: {trackedPeopleAhead ?? "--"}</p>
+    </div>
+  )}
 </div>
 
 
