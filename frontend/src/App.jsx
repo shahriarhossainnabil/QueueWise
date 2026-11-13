@@ -37,7 +37,10 @@ const [waitingEstimate, setWaitingEstimate] = useState(null);
 const [estimateLoading, setEstimateLoading] = useState(false);
 const [estimateError, setEstimateError] = useState("");
 // Average Service Time
-const [averageTimes, setAverageTimes] = useState([]);
+
+const [visitAnalysis, setVisitAnalysis] = useState(null);
+const [analysisLoading, setAnalysisLoading] = useState(false);
+const [analysisError, setAnalysisError] = useState("");const [averageTimes, setAverageTimes] = useState([]);
 const [averageLoading, setAverageLoading] = useState(false);
 const [averageError, setAverageError] = useState("");
 const loadAverageTimes = async () => {
@@ -60,6 +63,33 @@ const loadAverageTimes = async () => {
     setAverageError(error.message || "Could not connect to backend.");
   } finally {
     setAverageLoading(false);
+  }
+};
+const loadVisitAnalysis = async () => {
+  setAnalysisLoading(true);
+  setAnalysisError("");
+
+  try {
+    const response = await fetch(
+      "http://localhost:5000/api/tokens/visit-analysis"
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Could not load visit analysis."
+      );
+    }
+
+    setVisitAnalysis(data);
+    console.log("VISIT ANALYSIS:", data);
+  } catch (error) {
+    setAnalysisError(
+      error.message || "Could not connect to backend."
+    );
+  } finally {
+    setAnalysisLoading(false);
   }
 };
 // Load Dynamic Waiting Time Estimate
@@ -90,6 +120,7 @@ const loadWaitingEstimate = async (tokenNumber) => {
 };
 useEffect(() => {
   loadAverageTimes();
+  loadVisitAnalysis();
 }, []);
  
 useEffect(() => {
@@ -442,83 +473,71 @@ useEffect(() => {
 
 
 
+
 <div className="token-action">
-  
+  <button
+    className="primary-btn"
+    onClick={async () => {
+      const savedUser = localStorage.getItem("queuewiseUser");
 
-<button
-  className="primary-btn"
-  onClick={async () => {
-    const savedUser = localStorage.getItem("queuewiseUser");
+      if (!savedUser) {
+        alert("Please login before generating a token.");
+        return;
+      }
 
-    if (!savedUser) {
-      alert("Please login before generating a token.");
-      return;
-    }
+      try {
+        const user = JSON.parse(savedUser);
 
-    const user = JSON.parse(savedUser);
+        const response = await fetch("http://localhost:5000/api/tokens", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            service: selectedService,
+            userEmail: user.email,
+          }),
+        });
 
-    const prefix = {
-      "Medical Consultation": "Q",
-      "Diagnostic Test": "D",
-      "Pharmacy Service": "P",
-      "Billing / Payment": "B",
-    };
+        const data = await response.json();
 
-    const tokenNumber = `${prefix[selectedService]}-${Math.floor(
-      100 + Math.random() * 900
-    )}`;
+        if (!response.ok) {
+          throw new Error(data.message || "Could not generate token.");
+        }
 
-    try {
-      const response = await fetch("http://localhost:5000/api/tokens", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tokenNumber,
-          service: selectedService,
-          userEmail: user.email,
-        }),
-      });
+        const generatedToken = data.token.tokenNumber;
 
-      const data = await response.json();
+        setMyToken(generatedToken);
+        setQueuePosition(null);
+        setPeopleAhead(null);
+        setTotalWaiting(null);
+        setWaitingEstimate(null);
+        setEstimateError("");
 
-     
-if (response.ok) {
-  setMyToken(data.token.tokenNumber);
+        const positionResponse = await fetch(
+          `http://localhost:5000/api/tokens/position?tokenNumber=${encodeURIComponent(generatedToken)}`
+        );
 
-  setQueuePosition(null);
-  setPeopleAhead(null);
-  setTotalWaiting(null);
-  setWaitingEstimate(null);
-  setEstimateError("");
-  const positionResponse = await fetch(
-    `http://localhost:5000/api/tokens/position?tokenNumber=${encodeURIComponent(
-      data.token.tokenNumber
-    )}`
-  );
+        const positionData = await positionResponse.json();
 
-  const positionData = await positionResponse.json();
+        if (positionResponse.ok) {
+          setQueuePosition(positionData.position);
+          setPeopleAhead(positionData.peopleAhead);
+          setTotalWaiting(positionData.totalWaiting);
+        }
 
-  if (positionResponse.ok) {
-    setQueuePosition(positionData.position);
-    setPeopleAhead(positionData.peopleAhead);
-    setTotalWaiting(positionData.totalWaiting);
-  }
-    loadWaitingEstimate(data.token.tokenNumber);
+        loadWaitingEstimate(generatedToken);
 
-  alert("Token saved successfully!");
-} else {
-  alert(data.message || "Could not save token.");
-}
-    } catch (error) {
-      alert("Could not connect to the backend.");
-    }
-  }}
->
-  Get Token <span>→</span>
-</button>
+        alert("QueueWise Smart Digital Pass created successfully!");
+      } catch (error) {
+        alert(error.message || "Could not connect to the backend.");
+      }
+    }}
+  >
+    Get Token <span>→</span>
+  </button>
 </div>
+
 
 {myToken && (
   <div className="my-token">
@@ -583,6 +602,103 @@ if (response.ok) {
 
   </section>
 )}
+{/* ================= SMART VISIT INTELLIGENCE ================= */}
+
+<section className="smart-visit-section">
+
+  <div className="smart-visit-header">
+    <div>
+      <span className="section-tag">SMART VISIT INTELLIGENCE</span>
+      <h2>Find Your Best Time to Visit</h2>
+      <p>
+        Understand queue patterns and plan your visit more efficiently.
+      </p>
+    </div>
+
+    <button
+      className="average-refresh-btn"
+      onClick={loadVisitAnalysis}
+      disabled={analysisLoading}
+    >
+      {analysisLoading ? "Analyzing..." : "↻ Refresh"}
+    </button>
+  </div>
+
+  {analysisLoading ? (
+    <div className="smart-visit-message">
+      Analyzing historical queue patterns...
+    </div>
+  ) : analysisError ? (
+    <div className="smart-visit-message error">
+      {analysisError}
+    </div>
+  ) : visitAnalysis?.analysisAvailable ? (
+
+    <div className="smart-visit-content">
+
+      <div className="smart-visit-stats">
+
+        <div className="smart-visit-card">
+          <div className="smart-visit-card-top">
+            <span className="smart-visit-icon">▦</span>
+            <span className="smart-visit-label">BUSIEST DAY</span>
+          </div>
+
+          <strong>{visitAnalysis.busiestDay}</strong>
+
+          <p>
+            <b>{visitAnalysis.busiestDayCount}</b> recorded visits
+          </p>
+        </div>
+
+        <div className="smart-visit-card">
+          <div className="smart-visit-card-top">
+            <span className="smart-visit-icon">◷</span>
+            <span className="smart-visit-label">PEAK QUEUE TIME</span>
+          </div>
+
+          <strong>{visitAnalysis.busiestTime}</strong>
+
+          <p>
+            <b>{visitAnalysis.busiestTimeCount}</b> queue entries
+          </p>
+        </div>
+
+      </div>
+
+      <div className="best-visit-card">
+        <div className="best-visit-top">
+          <div>
+            <span className="best-visit-eyebrow">
+              <span className="best-visit-dot"></span>
+              QUEUEWISE RECOMMENDS
+            </span>
+
+            <h3>Recommended Visit Time</h3>
+          </div>
+
+          <span className="best-visit-badge">BETTER TIME</span>
+        </div>
+
+        <strong className="best-visit-time">
+          {visitAnalysis.recommendedVisitTime}
+        </strong>
+
+        <p className="best-visit-description">
+          {visitAnalysis.message}
+        </p>
+
+      </div>
+
+    </div>
+
+  ) : (
+    <div className="smart-visit-message">
+      Not enough historical queue data for analysis yet.
+    </div>
+  )}
+
+</section>
 
 {/* ================= AVERAGE SERVICE TIME ================= */}
 

@@ -1,4 +1,6 @@
 
+const Counter = require("../models/Counter");
+
 const express = require("express");
 const router = express.Router();
 const Token = require("../models/Token");
@@ -8,16 +10,67 @@ router.get("/test", (req, res) => {
   res.send("TOKEN ROUTE WORKS");
 });
 
-// Create a new queue token
+
+const servicePrefixes = {
+  "Medical Consultation": "MED",
+  "Diagnostic Test": "DIA",
+  "Pharmacy": "PHA",
+  "Pharmacy Service": "PHA",
+  "Billing": "BIL",
+  "Billing / Payment": "BIL",
+};
+
 router.post("/", async (req, res) => {
   try {
-    const { tokenNumber, service, userEmail } = req.body;
+    const { service, userEmail } = req.body;
 
-    if (!tokenNumber || !service || !userEmail) {
+    if (!service || !userEmail) {
       return res.status(400).json({
-        message: "Token number, service, and user email are required.",
+        message: "Service and user email are required.",
       });
     }
+
+    const prefix = servicePrefixes[service];
+
+    if (!prefix) {
+      return res.status(400).json({
+        message: "Invalid service type.",
+      });
+    }
+
+    // Get current date in Bangladesh timezone
+    const dateParts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Dhaka",
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    }).formatToParts(new Date());
+
+    const dateValues = {};
+
+    dateParts.forEach((part) => {
+      dateValues[part.type] = part.value;
+    });
+
+    const dateCode =
+      dateValues.day + dateValues.month + dateValues.year;
+
+    // Generate a separate serial for each service and date
+    const counterKey = `${dateCode}-${prefix}`;
+
+    const counter = await Counter.findOneAndUpdate(
+      { key: counterKey },
+      { $inc: { sequence: 1 } },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    const serial = String(counter.sequence).padStart(3, "0");
+
+    const tokenNumber = `QW-${prefix}-${dateCode}-${serial}`;
 
     const newToken = new Token({
       tokenNumber,
@@ -28,22 +81,19 @@ router.post("/", async (req, res) => {
     await newToken.save();
 
     res.status(201).json({
-      message: "Token saved successfully!",
+      message: "QueueWise Smart Digital Pass created successfully!",
       token: newToken,
     });
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({
-        message: "This token number already exists. Please generate another.",
-      });
-    }
-
     res.status(500).json({
-      message: "Failed to save token.",
+      message: "Failed to generate token.",
       error: error.message,
     });
   }
 });
+
+  
+
 
 // MODULE 1: Queue Position Tracking
 router.get("/position", async (req, res) => {
@@ -411,6 +461,100 @@ router.get("/estimate", async (req, res) => {
     });
   }
 });
+// Busy / Free Day & Time Analysis
+
+// Busy / Free Day & Time Analysis
+router.get("/visit-analysis", async (req, res) => {
+  try {
+    const tokens = await Token.find({
+      status: { $in: ["Waiting", "Serving", "Completed"] },
+    });
+
+    if (tokens.length === 0) {
+      return res.status(200).json({
+        message: "Not enough queue data for analysis.",
+        analysisAvailable: false,
+      });
+    }
+
+    const dayData = {};
+    const hourData = {};
+
+    tokens.forEach((token) => {
+      const date = new Date(token.createdAt);
+
+      // Bangladesh timezone
+      const day = new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        timeZone: "Asia/Dhaka",
+      }).format(date);
+
+      const hour = Number(
+        new Intl.DateTimeFormat("en-US", {
+          hour: "2-digit",
+          hourCycle: "h23",
+          timeZone: "Asia/Dhaka",
+        }).format(date)
+      );
+
+      dayData[day] = (dayData[day] || 0) + 1;
+      hourData[hour] = (hourData[hour] || 0) + 1;
+    });
+
+    // Find busiest day
+    const busiestDay = Object.entries(dayData).sort(
+      (a, b) => b[1] - a[1]
+    )[0];
+
+    // Find busiest hour
+    const busiestHour = Object.entries(hourData).sort(
+      (a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0])
+    )[0];
+
+    // Find least busy hour from observed hours
+    // Find the least busy hour within reasonable visiting hours (8 AM - 8 PM)
+const reasonableHours = Object.entries(hourData).filter(
+  ([hour]) => Number(hour) >= 8 && Number(hour) <= 20
+);
+
+const leastBusyHour = reasonableHours.sort(
+  (a, b) => a[1] - b[1] || Number(a[0]) - Number(b[0])
+)[0];
+
+    const formatHour = (hour) => {
+      const period = hour >= 12 ? "PM" : "AM";
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:00 ${period}`;
+    };
+
+    const recommendedVisitTime = formatHour(
+      Number(leastBusyHour[0])
+    );
+
+    res.status(200).json({
+      analysisAvailable: true,
+
+      busiestDay: busiestDay[0],
+      busiestDayCount: busiestDay[1],
+
+      busiestTime: formatHour(Number(busiestHour[0])),
+      busiestTimeCount: busiestHour[1],
+
+      leastBusyTime: recommendedVisitTime,
+      leastBusyTimeCount: leastBusyHour[1],
+
+      recommendedVisitTime,
+
+      message: `Based on historical queue data, ${recommendedVisitTime} has the lowest recorded queue activity among the observed hours.`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to analyze busy and free time.",
+      error: error.message,
+    });
+  }
+});
+
 
 
 // Get tokens for a user
