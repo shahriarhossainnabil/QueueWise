@@ -28,6 +28,15 @@ function Home() {
     });
   }
 }, [showQueue, selectedService]);
+
+// Live Countdown Timer
+useEffect(() => {
+  const timer = setInterval(() => {
+    setClockNow(Date.now());
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, []);
  const [myToken, setMyToken] = useState(null);
  const [searchToken, setSearchToken] = useState("");
 const [trackedToken, setTrackedToken] = useState(null);
@@ -42,6 +51,21 @@ const [totalWaiting, setTotalWaiting] = useState(null);
 const [waitingEstimate, setWaitingEstimate] = useState(null);
 const [estimateLoading, setEstimateLoading] = useState(false);
 const [estimateError, setEstimateError] = useState("");
+const [clockNow, setClockNow] = useState(Date.now());
+const remainingSeconds = waitingEstimate?.expectedServingTime
+  ? Math.max(
+      0,
+      Math.floor(
+        (new Date(waitingEstimate.expectedServingTime).getTime() - clockNow) / 1000
+      )
+    )
+  : 0;
+
+const minutes = Math.floor(remainingSeconds / 60);
+const seconds = remainingSeconds % 60;
+
+const countdownTime = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
 // Average Service Time
 
 const [visitAnalysis, setVisitAnalysis] = useState(null);
@@ -89,6 +113,7 @@ const loadVisitAnalysis = async () => {
     }
 
     setVisitAnalysis(data);
+   console.log("HOURLY DATA:", JSON.stringify(data.hourlyPattern, null, 2));
     console.log("VISIT ANALYSIS:", data);
   } catch (error) {
     setAnalysisError(
@@ -98,6 +123,10 @@ const loadVisitAnalysis = async () => {
     setAnalysisLoading(false);
   }
 };
+useEffect(() => {
+  loadAverageTimes();
+  loadVisitAnalysis();
+}, []);
 // Load Dynamic Waiting Time Estimate
 const loadWaitingEstimate = async (tokenNumber) => {
   if (!tokenNumber) return;
@@ -642,69 +671,241 @@ useEffect(() => {
 </div>
 
 
+
+{/* PREMIUM QUEUE TRACKING DASHBOARD */}
 {myToken && (
-  <div className="my-token">
-    <span>YOUR TOKEN</span>
-    <strong>{myToken}</strong>
+  <div className="premium-queue-dashboard">
 
-    {queuePosition !== null ? (
-      <>
-        <p>Your queue position: {queuePosition}</p>
-        <p>People ahead of you: {peopleAhead}</p>
-        <p>Total people waiting: {totalWaiting}</p>
-      </>
-    ) : (
-      <p>Loading your queue position...</p>
-    )}
-  </div>
-)}
+    {/* TOKEN HEADER */}
+    <div className="premium-dashboard-header">
+      <div>
+        <span className="premium-eyebrow">YOUR DIGITAL QUEUE PASS</span>
+        <h3>Queue Tracking</h3>
+        <p>Track your position and monitor your estimated waiting time.</p>
+      </div>
 
-{/* DYNAMIC WAITING TIME ESTIMATE */}
-{myToken && (
-  <div className="my-token estimate-card">
-    <span>SMART WAITING ESTIMATE</span>
+      <span className="premium-live-badge">
+        <i></i> LIVE TRACKING
+      </span>
+    </div>
 
-    {estimateLoading ? (
-      <p>Calculating your waiting time...</p>
-    ) : estimateError ? (
-      <p>{estimateError}</p>
-    ) : waitingEstimate ? (
-      waitingEstimate.estimateAvailable ? (
-        <>
-          <p>People Ahead: {waitingEstimate.peopleAhead ?? "--"}</p>
-          <p>Average Service Time: {waitingEstimate.averageServiceTime} min</p>
-          <p>
-            Estimated Waiting Time: {waitingEstimate.estimatedWaitingTime} min
-          </p>
-          <p>
-            Expected Serving Time:{" "}
-            {waitingEstimate.expectedServingTime
-              ? new Date(waitingEstimate.expectedServingTime).toLocaleString()
-              : "--"}
-          </p>
-        </>
-      ) : (
-        <p>{waitingEstimate.message}</p>
-      )
-    ) : (
-      <p>Waiting for estimate...</p>
-    )}
+    {/* TOKEN CARD */}
+    <div className="premium-token-card">
+      <div className="premium-token-top">
+        <span>YOUR TOKEN NUMBER</span>
+        <span className="premium-token-status">ACTIVE</span>
+      </div>
 
-    <button
-      className="average-refresh-btn"
-      onClick={() => loadWaitingEstimate(myToken)}
-      disabled={estimateLoading}
-    >
-      {estimateLoading ? "Calculating..." : "Refresh Estimate"}
-    </button>
-  </div>
-)}
+      <h2>{myToken}</h2>
 
+      <div className="premium-token-bottom">
+        <span>QueueWise Smart Digital Pass</span>
+        <span>2026</span>
+      </div>
+    </div>
+
+    {/* QUEUE METRICS */}
+    <div className="premium-metrics-grid">
+
+      <div className="premium-metric-card">
+        <span className="premium-metric-icon">#</span>
+        <span className="premium-metric-label">QUEUE POSITION</span>
+        <strong>{queuePosition ?? "--"}</strong>
+        <small>Your current position</small>
+      </div>
+
+      <div className="premium-metric-card">
+        <span className="premium-metric-icon">♙</span>
+        <span className="premium-metric-label">PEOPLE AHEAD</span>
+        <strong>{peopleAhead ?? "--"}</strong>
+        <small>Customers before you</small>
+      </div>
+
+      <div className="premium-metric-card">
+        <span className="premium-metric-icon">◉</span>
+        <span className="premium-metric-label">TOTAL WAITING</span>
+        <strong>{totalWaiting ?? "--"}</strong>
+        <small>Current queue size</small>
+      </div>
+
+      <div className="premium-metric-card">
+        <span className="premium-metric-icon">◷</span>
+        <span className="premium-metric-label">AVG. SERVICE TIME</span>
+        <strong>
+          {waitingEstimate?.averageServiceTime ?? "--"}
+          <small> min</small>
+        </strong>
+        <small>Per customer</small>
+      </div>
 
     </div>
 
-  </section>
+{/* VISUAL QUEUE PROGRESS */}
+
+<div className="premium-progress-panel">
+
+  <div className="premium-progress-header">
+    <div>
+      <span className="premium-eyebrow">
+        LIVE QUEUE POSITION
+      </span>
+      <h3>Your Queue Progress</h3>
+    </div>
+
+    <span className="premium-progress-number">
+      #{queuePosition ?? "--"}
+    </span>
+  </div>
+
+  <div className="premium-progress-info">
+    <div>
+      <strong>{peopleAhead ?? "--"}</strong>
+      <span>People Ahead</span>
+    </div>
+
+    <div>
+      <strong>{totalWaiting ?? "--"}</strong>
+      <span>Total Waiting</span>
+    </div>
+  </div>
+
+  <div className="premium-progress-track">
+    <div
+      className="premium-progress-fill"
+      style={{
+        width:
+          queuePosition != null &&
+          totalWaiting > 0
+            ? `${Math.max(
+                0,
+                Math.min(
+                  100,
+                  ((totalWaiting - queuePosition + 1) /
+                    totalWaiting) * 100
+                )
+              )}%`
+            : "0%"
+      }}
+    ></div>
+  </div>
+
+  <div className="premium-progress-footer">
+    <span>
+      {queuePosition === 1
+        ? "You are next in line!"
+        : queuePosition != null
+        ? `${peopleAhead ?? "--"} people are ahead of you`
+        : "Waiting for queue information..."}
+    </span>
+
+    <span>
+      {queuePosition != null && totalWaiting > 0
+        ? `${Math.round(
+            ((totalWaiting - queuePosition + 1) /
+              totalWaiting) * 100
+          )}%`
+        : "--"}
+    </span>
+  </div>
+
+</div>
+
+
+    {/* SMART WAITING ANALYSIS */}
+    <div className="premium-estimate-panel">
+
+      <div className="premium-estimate-header">
+        <div>
+          <span className="premium-eyebrow">INTELLIGENT TIME PREDICTION</span>
+          <h3>Smart Waiting Analysis</h3>
+        </div>
+
+        <span className="premium-ai-badge">✦ SMART ESTIMATE</span>
+      </div>
+
+      {estimateLoading ? (
+        <p>Calculating your waiting time...</p>
+      ) : estimateError ? (
+        <p>{estimateError}</p>
+      ) : waitingEstimate?.estimateAvailable ? (
+        <>
+          <div className="premium-countdown-area">
+
+            <div className="premium-runner-track">
+              <span className="premium-runner">🏃</span>
+            </div>
+
+            <span className="premium-countdown-label">
+              ESTIMATED TIME REMAINING
+            </span>
+
+            <h2 className="countdown-clock">
+              {countdownTime}
+            </h2>
+
+            <span className="premium-countdown-caption">
+              Until your expected serving time
+            </span>
+
+            <span className={
+              remainingSeconds <= 60
+                ? "premium-queue-status almost"
+                : "premium-queue-status"
+            }>
+              {remainingSeconds <= 60
+                ? "ALMOST YOUR TURN"
+                : "WAITING IN QUEUE"}
+            </span>
+
+          </div>
+
+          <div className="premium-estimate-details">
+
+            <div>
+              <span>ESTIMATED WAITING TIME</span>
+              <strong>
+                {waitingEstimate.estimatedWaitingTime} min
+              </strong>
+            </div>
+
+            <div>
+              <span>EXPECTED SERVING TIME</span>
+              <strong>
+                {waitingEstimate.expectedServingTime
+                  ? new Date(
+                      waitingEstimate.expectedServingTime
+                    ).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    })
+                  : "--"}
+              </strong>
+            </div>
+
+          </div>
+        </>
+      ) : waitingEstimate ? (
+        <p>{waitingEstimate.message}</p>
+      ) : (
+        <p>Waiting for your smart estimate...</p>
+      )}
+
+      <button
+        className="premium-refresh-button"
+        onClick={() => loadWaitingEstimate(myToken)}
+        disabled={estimateLoading}
+      >
+        {estimateLoading ? "Calculating..." : "↻ Refresh Estimate"}
+      </button>
+
+    </div>
+
+  </div>
 )}
+</div>
+</section>
+)}
+
 {/* ================= SMART VISIT INTELLIGENCE ================= */}
 
 <section className="smart-visit-section">
@@ -789,6 +990,11 @@ useEffect(() => {
 
         <p className="best-visit-description">
           {visitAnalysis.message}
+          {visitAnalysis.averageServiceTime !== null && (
+  <p className="best-visit-description">
+    Average Service Duration: {visitAnalysis.averageServiceTime} minutes
+  </p>
+)}
         </p>
 
       </div>
@@ -971,14 +1177,20 @@ useEffect(() => {
 
               <div>
                 <span>RECOMMENDED PERIOD</span>
-                <strong>3:00 PM – 4:00 PM</strong>
+                <strong>
+  {visitAnalysis?.recommendedVisitTime || "Analyzing..."}
+</strong>
               </div>
 
               <div className="recommend-divider"></div>
 
               <div>
-                <span>EXPECTED WAIT</span>
-                <strong>~12 min</strong>
+                <span>AVERAGE SERVICE TIME</span>
+<strong>
+  {visitAnalysis?.averageServiceTime != null
+    ? `${visitAnalysis.averageServiceTime} min`
+    : "Not available"}
+</strong>
               </div>
 
             </div>
@@ -989,47 +1201,57 @@ useEffect(() => {
           <div className="timeline-card">
 
             <div className="timeline-top">
-              <span>Today's queue pattern</span>
+              <span>Historical queue pattern</span>
               <span>Estimated</span>
             </div>
 
             <div className="timeline">
 
-              <div className="time-block low">
-                <span>09 AM</span>
-                <div></div>
-                <small>Low</small>
-              </div>
+              <div className="timeline">
+  {visitAnalysis?.hourlyPattern?.map((item) => {
+    const maxCount = Math.max(
+      ...visitAnalysis.hourlyPattern.map((entry) => entry.count)
+    );
 
-              <div className="time-block medium">
-                <span>11 AM</span>
-                <div></div>
-                <small>Medium</small>
-              </div>
+    const level =
+      maxCount === 0
+        ? "low"
+        : item.count === maxCount
+        ? "busy"
+        : item.count <= maxCount / 3
+        ? "low"
+        : "medium";
 
-              <div className="time-block busy">
-                <span>01 PM</span>
-                <div></div>
-                <small>Busy</small>
-              </div>
+    const displayHour = item.hour % 12 || 12;
+    const period = item.hour >= 12 ? "PM" : "AM";
 
-              <div className="time-block recommended">
-                <span>03 PM</span>
-                <div></div>
-                <small>Recommended</small>
-              </div>
+    return (
+      <div className={`time-block ${level}`} key={item.hour}>
+        <span>
+          {String(displayHour).padStart(2, "0")} {period}
+        </span>
 
-              <div className="time-block medium">
-                <span>05 PM</span>
-                <div></div>
-                <small>Medium</small>
-              </div>
+        <div
+  style={{
+    height: `${maxCount === 0 ? 10 : Math.max((item.count / maxCount) * 60, 10)}px`,
+  }}
+></div>
+
+        <small>
+          {level.charAt(0).toUpperCase() + level.slice(1)}
+          {" · "}
+          {item.count} tokens
+        </small>
+      </div>
+    );
+  })}
+</div>
 
             </div>
 
             <div className="timeline-note">
               <span>✦</span>
-              Lowest estimated waiting period today
+              Based on historical queue activity
             </div>
 
           </div>

@@ -513,12 +513,20 @@ router.get("/visit-analysis", async (req, res) => {
 
     // Find least busy hour from observed hours
     // Find the least busy hour within reasonable visiting hours (8 AM - 8 PM)
-const reasonableHours = Object.entries(hourData).filter(
-  ([hour]) => Number(hour) >= 8 && Number(hour) <= 20
+const reasonableHours = Array.from(
+  { length: 13 },
+  (_, index) => {
+    const hour = index + 8;
+
+    return [
+      hour,
+      hourData[hour] || 0,
+    ];
+  }
 );
 
 const leastBusyHour = reasonableHours.sort(
-  (a, b) => a[1] - b[1] || Number(a[0]) - Number(b[0])
+  (a, b) => a[1] - b[1] || a[0] - b[0]
 )[0];
 
     const formatHour = (hour) => {
@@ -530,7 +538,29 @@ const leastBusyHour = reasonableHours.sort(
     const recommendedVisitTime = formatHour(
       Number(leastBusyHour[0])
     );
+const recommendedHour = Number(leastBusyHour[0]);
 
+const averageData = await Token.aggregate([
+  {
+    $match: {
+      status: "Completed",
+      serviceDuration: { $ne: null },
+    },
+  },
+  {
+    $group: {
+      _id: null,
+      averageServiceTime: {
+        $avg: "$serviceDuration",
+      },
+    },
+  },
+]);
+
+const averageServiceTime =
+  averageData.length > 0
+    ? Number(averageData[0].averageServiceTime.toFixed(2))
+    : null;
     res.status(200).json({
       analysisAvailable: true,
 
@@ -542,7 +572,11 @@ const leastBusyHour = reasonableHours.sort(
 
       leastBusyTime: recommendedVisitTime,
       leastBusyTimeCount: leastBusyHour[1],
-
+averageServiceTime,
+hourlyPattern: [9, 11, 13, 15, 17].map((hour) => ({
+  hour,
+  count: hourData[hour] || 0,
+})),
       recommendedVisitTime,
 
       message: `Based on historical queue data, ${recommendedVisitTime} has the lowest recorded queue activity among the observed hours.`,
