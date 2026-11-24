@@ -588,6 +588,36 @@ hourlyPattern: [9, 11, 13, 15, 17].map((hour) => ({
     });
   }
 });
+// MODULE 3: Get Active Queue for Staff/Admin
+router.get("/admin/queue", async (req, res) => {
+  try {
+    const { service } = req.query;
+
+    const filter = {
+      status: { $in: ["Waiting", "Serving"] }
+    };
+
+    // If a specific service is selected
+    if (service) {
+      filter.service = service;
+    }
+
+    const tokens = await Token.find(filter)
+      .sort({ createdAt: 1 });
+
+    res.status(200).json({
+      message: "Active queue fetched successfully.",
+      totalTokens: tokens.length,
+      tokens
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch active queue.",
+      error: error.message
+    });
+  }
+});
 
 
 

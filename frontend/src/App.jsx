@@ -2,6 +2,7 @@ import "./App.css";
 import { useState, useEffect, useRef } from "react";
 import Register from "./Register";
 import Login from "./Login";
+import AdminQueue from "./AdminQueue";
 import { BrowserRouter, Routes, Route, Navigate , useNavigate } from "react-router-dom";
 
 function Home() {
@@ -1347,6 +1348,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/admin/queue" element={<AdminQueue />} />
         <Route path="/register" element={<Register />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
