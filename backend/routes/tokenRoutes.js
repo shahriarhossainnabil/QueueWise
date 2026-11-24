@@ -360,6 +360,7 @@ router.get("/estimate", async (req, res) => {
       return res.status(200).json({
         message: "Not enough completed service data.",
         tokenNumber,
+        status: token.status,
         service: token.service,
         estimateAvailable: false,
       });

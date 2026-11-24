@@ -53,6 +53,47 @@ const [waitingEstimate, setWaitingEstimate] = useState(null);
 const [estimateLoading, setEstimateLoading] = useState(false);
 const [estimateError, setEstimateError] = useState("");
 const [clockNow, setClockNow] = useState(Date.now());
+// Queue Notifications
+const [notificationMessage, setNotificationMessage] = useState("");
+const enableQueueAlerts = async () => {
+  if (!("Notification" in window)) {
+    setNotificationPermission("unsupported");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+  setNotificationPermission(permission);
+};
+const sendQueueNotification = (message, eventKey) => {
+  // Prevent duplicate notifications
+  if (notifiedEventsRef.current[eventKey]) {
+    return;
+  }
+
+  notifiedEventsRef.current[eventKey] = true;
+
+  // In-app notification
+  setNotificationMessage(message);
+
+  // Browser notification
+  if (
+    "Notification" in window &&
+    Notification.permission === "granted"
+  ) {
+    new Notification("QueueWise", {
+      body: message,
+    });
+  }
+
+  // Mobile vibration
+  if ("vibrate" in navigator) {
+    navigator.vibrate([200, 100, 200, 100, 400]);
+  }
+};
+const [notificationPermission, setNotificationPermission] = useState(
+  "Notification" in window ? Notification.permission : "unsupported"
+);
+const notifiedEventsRef = useRef({});
 const remainingSeconds = waitingEstimate?.expectedServingTime
   ? Math.max(
       0,
@@ -234,6 +275,98 @@ useEffect(() => {
 
   loadMyToken();
 }, []);
+// Automatic Queue Monitoring
+const activeTrackingToken = trackedToken || myToken;
+
+const lastQueuePositionRef = useRef({});
+
+useEffect(() => {
+  if (!activeTrackingToken) return;
+
+  let isMounted = true;
+
+  const checkQueueStatus = async () => {
+    try {
+      const [estimateResponse, positionResponse] = await Promise.all([
+        fetch(
+          `http://localhost:5000/api/tokens/estimate?tokenNumber=${encodeURIComponent(activeTrackingToken)}`
+        ),
+        fetch(
+          `http://localhost:5000/api/tokens/position?tokenNumber=${encodeURIComponent(activeTrackingToken)}`
+        ),
+      ]);
+
+      const estimateData = await estimateResponse.json();
+      const positionData = await positionResponse.json();
+
+      if (!isMounted || !estimateResponse.ok || !positionResponse.ok) {
+        return;
+      }
+
+      setWaitingEstimate(estimateData);
+
+      const status = estimateData.status;
+      const peopleAhead = positionData.peopleAhead;
+
+      // Your Turn Notification
+      if (status === "Serving") {
+        sendQueueNotification(
+          `Your turn has arrived! Token: ${activeTrackingToken}`,
+          `serving-${activeTrackingToken}`
+        );
+      }
+
+      // Turn Approaching Notification
+      if (
+        status === "Waiting" &&
+        typeof peopleAhead === "number" &&
+        peopleAhead <= 3
+      ) {
+        sendQueueNotification(
+          `Your turn is approaching! ${peopleAhead} people ahead of you.`,
+          `approaching-${activeTrackingToken}`
+        );
+      }
+
+      // Queue Position Update Notification
+      if (typeof peopleAhead === "number") {
+        const previousPosition =
+          lastQueuePositionRef.current[activeTrackingToken];
+
+        if (
+          previousPosition !== undefined &&
+          previousPosition !== peopleAhead
+        ) {
+          sendQueueNotification(
+            `Queue updated! ${peopleAhead} people are now ahead of you.`,
+            `position-${activeTrackingToken}-${peopleAhead}`
+          );
+        }
+
+        lastQueuePositionRef.current[activeTrackingToken] = peopleAhead;
+
+        if (trackedToken) {
+          setTrackedPeopleAhead(peopleAhead);
+          setTrackedPosition(positionData.position);
+        } else {
+          setPeopleAhead(peopleAhead);
+          setQueuePosition(positionData.position);
+        }
+      }
+    } catch (error) {
+      console.error("Queue monitoring error:", error);
+    }
+  };
+
+  checkQueueStatus();
+
+  const monitoringTimer = setInterval(checkQueueStatus, 10000);
+
+  return () => {
+    isMounted = false;
+    clearInterval(monitoringTimer);
+  };
+}, [activeTrackingToken]);
  const queueData = {
   "Medical Consultation": {
     nowServing: "Q-024",
@@ -669,6 +802,37 @@ useEffect(() => {
       <p>People Ahead: {trackedPeopleAhead ?? "--"}</p>
     </div>
   )}
+  {/* QUEUE NOTIFICATION SETTINGS */}
+<div className="queue-notification-settings">
+
+  <button
+    type="button"
+    className="primary-btn"
+    onClick={enableQueueAlerts}
+    disabled={
+      notificationPermission === "granted" ||
+      notificationPermission === "unsupported"
+    }
+  >
+    {notificationPermission === "granted"
+      ? "Notifications Enabled"
+      : notificationPermission === "unsupported"
+      ? "Notifications Not Supported"
+      : "Enable Notifications"}
+  </button>
+
+  <p>
+    Notification Status: {notificationPermission}
+  </p>
+
+  {notificationMessage && (
+    <div className="my-token">
+      <strong>QueueWise Alert</strong>
+      <p>{notificationMessage}</p>
+    </div>
+  )}
+
+</div>
 </div>
 
 
