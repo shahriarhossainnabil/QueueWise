@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 function AdminQueue() {
+  const getAuthHeaders = () => ({
+  Authorization: `Bearer ${localStorage.getItem("queuewiseToken")}`,
+});
+  const navigate = useNavigate();
   const [tokens, setTokens] = useState([]);
   const [selectedService, setSelectedService] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
+  // Admin Dashboard Statistics
+const [statistics, setStatistics] = useState(null);
+const [statisticsLoading, setStatisticsLoading] = useState(false);
+const [statisticsError, setStatisticsError] = useState("");
 
   const services = [
     "Medical Consultation",
@@ -25,7 +34,9 @@ function AdminQueue() {
           )}`
         : "http://localhost:5000/api/tokens/admin/queue";
 
-      const response = await fetch(url);
+     const response = await fetch(url, {
+  headers: getAuthHeaders(),
+});
       const data = await response.json();
 
       if (!response.ok) {
@@ -39,11 +50,51 @@ function AdminQueue() {
       setLoading(false);
     }
   };
+  // Load Admin Dashboard Statistics
+const loadStatistics = async () => {
+  setStatisticsLoading(true);
+  setStatisticsError("");
+
+  try {
+   const response = await fetch(
+  "http://localhost:5000/api/tokens/admin/statistics",
+  {
+    headers: getAuthHeaders(),
+  }
+);
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Could not load statistics."
+      );
+    }
+
+    setStatistics(data);
+  } catch (error) {
+    setStatisticsError(
+      error.message || "Could not load statistics."
+    );
+  } finally {
+    setStatisticsLoading(false);
+  }
+};
+// Refresh complete admin dashboard
+const refreshDashboard = async () => {
+  await Promise.all([
+    loadQueue(),
+    loadStatistics(),
+  ]);
+};
 
   useEffect(() => {
     loadQueue();
   }, [selectedService]);
-
+// Load dashboard statistics when page opens
+useEffect(() => {
+  loadStatistics();
+}, []);
   const startService = async (tokenNumber) => {
     setActionLoading(tokenNumber);
     setError("");
@@ -53,9 +104,10 @@ function AdminQueue() {
         `http://localhost:5000/api/tokens/start/${encodeURIComponent(
           tokenNumber
         )}`,
-        {
-          method: "PATCH",
-        }
+       {
+  method: "PATCH",
+  headers: getAuthHeaders(),
+}
       );
 
       const data = await response.json();
@@ -81,9 +133,10 @@ function AdminQueue() {
         `http://localhost:5000/api/tokens/complete/${encodeURIComponent(
           tokenNumber
         )}`,
-        {
-          method: "PATCH",
-        }
+       {
+  method: "PATCH",
+  headers: getAuthHeaders(),
+}
       );
 
       const data = await response.json();
@@ -99,7 +152,6 @@ function AdminQueue() {
       setActionLoading("");
     }
   };
-
   return (
     <div
       style={{
@@ -108,6 +160,21 @@ function AdminQueue() {
         padding: "40px",
       }}
     >
+      <button
+  onClick={() => navigate("/")}
+  style={{
+    padding: "11px 20px",
+    background: "#111827",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "600",
+    marginBottom: "20px",
+  }}
+>
+  ← Back to Website
+</button>
       <div
         style={{
           maxWidth: "1100px",
@@ -155,9 +222,22 @@ function AdminQueue() {
               Monitor active tokens and manage service progress.
             </p>
           </div>
-
           <button
-            onClick={loadQueue}
+            onClick={() => navigate("/admin/reports")}
+            style={{
+              border: "1px solid #2563eb",
+              borderRadius: "10px",
+              padding: "12px 20px",
+              background: "white",
+              color: "#2563eb",
+              cursor: "pointer",
+              fontWeight: "600",
+            }}
+          >
+            Service Reports →
+          </button>
+          <button
+           onClick={refreshDashboard}
             disabled={loading}
             style={{
               border: "none",
@@ -172,6 +252,295 @@ function AdminQueue() {
             {loading ? "Refreshing..." : "↻ Refresh"}
           </button>
         </div>
+
+        {/* ADMIN DASHBOARD STATISTICS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: "18px",
+            marginBottom: "24px",
+          }}
+        >
+          {[
+            {
+              title: "Total Tokens",
+              value: statistics?.overallStats?.totalTokens ?? 0,
+              color: "#2563eb",
+              background: "#eff6ff",
+            },
+            {
+              title: "Waiting",
+              value: statistics?.overallStats?.waitingTokens ?? 0,
+              color: "#d97706",
+              background: "#fffbeb",
+            },
+            {
+              title: "Currently Serving",
+              value: statistics?.overallStats?.servingTokens ?? 0,
+              color: "#16a34a",
+              background: "#f0fdf4",
+            },
+            {
+              title: "Completed",
+              value: statistics?.overallStats?.completedTokens ?? 0,
+              color: "#7c3aed",
+              background: "#f5f3ff",
+            },
+          ].map((item) => (
+            <div
+              key={item.title}
+              style={{
+                background: "white",
+                padding: "22px",
+                borderRadius: "14px",
+                border: "1px solid #e5e7eb",
+                borderLeft: `5px solid ${item.color}`,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  fontWeight: "600",
+                }}
+              >
+                {item.title}
+              </p>
+
+              <h2
+                style={{
+                  margin: "12px 0 0",
+                  fontSize: "30px",
+                  color: item.color,
+                  fontWeight: "800",
+                }}
+              >
+                {statisticsLoading ? "..." : item.value}
+              </h2>
+            </div>
+          ))}
+        </div>
+
+        {statisticsError && (
+          <div
+            style={{
+              background: "#fef2f2",
+              color: "#b91c1c",
+              padding: "14px",
+              borderRadius: "10px",
+              marginBottom: "20px",
+            }}
+          >
+            {statisticsError}
+          </div>
+        )}
+
+        {/* SERVICE-WISE STATISTICS */}
+        <div
+          style={{
+            background: "white",
+            padding: "22px",
+            borderRadius: "16px",
+            border: "1px solid #e5e7eb",
+            marginBottom: "24px",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 18px",
+              fontSize: "20px",
+              color: "#111827",
+            }}
+          >
+            Service-wise Statistics
+          </h2>
+
+          {statisticsLoading ? (
+            <p style={{ color: "#6b7280" }}>
+              Loading service statistics...
+            </p>
+          ) : !statistics?.serviceStats?.length ? (
+            <p style={{ color: "#6b7280" }}>
+              No service statistics available.
+            </p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  textAlign: "left",
+                  minWidth: "600px",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    {[
+                      "Service",
+                      "Total",
+                      "Waiting",
+                      "Serving",
+                      "Completed",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        style={{
+                          padding: "14px",
+                          fontSize: "13px",
+                          color: "#6b7280",
+                          borderBottom: "1px solid #e5e7eb",
+                        }}
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {statistics.serviceStats.map((service) => (
+                    <tr key={service._id}>
+                      <td
+                        style={{
+                          padding: "14px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        {service._id}
+                      </td>
+
+                      <td style={{ padding: "14px" }}>
+                        {service.totalTokens}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          color: "#d97706",
+                        }}
+                      >
+                        {service.waiting}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          color: "#16a34a",
+                        }}
+                      >
+                        {service.serving}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: "14px",
+                          color: "#7c3aed",
+                        }}
+                      >
+                        {service.completed}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* DAILY STATISTICS - LAST 7 DAYS */}
+        <div
+          style={{
+            background: "white",
+            padding: "22px",
+            borderRadius: "16px",
+            border: "1px solid #e5e7eb",
+            marginBottom: "24px",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 20px",
+              fontSize: "20px",
+              color: "#111827",
+            }}
+          >
+            Daily Statistics (Last 7 Days)
+          </h2>
+
+          {statisticsLoading ? (
+            <p style={{ color: "#6b7280" }}>
+              Loading daily statistics...
+            </p>
+          ) : !statistics?.dailyStats?.length ? (
+            <p style={{ color: "#6b7280" }}>
+              No daily statistics available.
+            </p>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+              }}
+            >
+              {statistics.dailyStats.map((day) => {
+                const maxTokens = Math.max(
+                  ...statistics.dailyStats.map(
+                    (item) => item.totalTokens
+                  ),
+                  1
+                );
+
+                const percentage =
+                  (day.totalTokens / maxTokens) * 100;
+
+                return (
+                  <div key={day._id}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "7px",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <span style={{ color: "#374151" }}>
+                        {day._id}
+                      </span>
+
+                      <strong style={{ color: "#2563eb" }}>
+                        {day.totalTokens} Tokens
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "12px",
+                        background: "#eff6ff",
+                        borderRadius: "20px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${percentage}%`,
+                          height: "100%",
+                          background: "#2563eb",
+                          borderRadius: "20px",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+
 
         <div
           style={{
@@ -190,8 +559,8 @@ function AdminQueue() {
               marginBottom: "8px",
               color: "#374151",
             }}
-          >
-            FILTER BY SERVICE
+              >
+          FILTER BY SERVICE
           </label>
 
           <select

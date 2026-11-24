@@ -25,7 +25,12 @@ function Login() {
       const data = await response.json();
 
       if (response.ok) {
+        // Save JWT token
+        localStorage.setItem("queuewiseToken", data.token);
+
+        // Save user information and role
         localStorage.setItem("queuewiseUser", JSON.stringify(data.user));
+
         navigate("/");
       } else {
         setMessage(data.message || "Login failed.");

@@ -2,7 +2,10 @@ import "./App.css";
 import { useState, useEffect, useRef } from "react";
 import Register from "./Register";
 import Login from "./Login";
+import AdminLogin from "./AdminLogin";
+import AdminReports from "./AdminReports";
 import AdminQueue from "./AdminQueue";
+import QueueHistory from "./QueueHistory";
 import { BrowserRouter, Routes, Route, Navigate , useNavigate } from "react-router-dom";
 
 function Home() {
@@ -168,6 +171,14 @@ const loadVisitAnalysis = async () => {
 useEffect(() => {
   loadAverageTimes();
   loadVisitAnalysis();
+}, []);
+// Automatically refresh visit recommendation
+useEffect(() => {
+  const recommendationTimer = setInterval(() => {
+    loadVisitAnalysis();
+  }, 10000);
+
+  return () => clearInterval(recommendationTimer);
 }, []);
 // Load Dynamic Waiting Time Estimate
 const loadWaitingEstimate = async (tokenNumber) => {
@@ -422,11 +433,28 @@ useEffect(() => {
         </div>
 
         <div className="nav-links">
-          <a href="#home">Home</a>
-          <a href="#services">Services</a>
-          <a href="#recommendation">Recommendation</a>
-          <a href="#how-it-works">How It Works</a>
-        </div>
+  <a href="#home">Home</a>
+  <a href="#services">Services</a>
+  <a href="#recommendation">Recommendation</a>
+  <a href="#how-it-works">How It Works</a>
+
+  {loggedInUser && (
+    <button
+      className="nav-login"
+      onClick={() => navigate("/history")}
+    >
+      My History
+    </button>
+  )}
+    {loggedInUser?.role === "admin" && (
+    <button
+      className="nav-login"
+      onClick={() => navigate("/admin/queue")}
+    >
+      Admin Dashboard
+    </button>
+  )}
+</div>
 
 
 {loggedInUser ? (
@@ -1378,14 +1406,14 @@ useEffect(() => {
       ...visitAnalysis.hourlyPattern.map((entry) => entry.count)
     );
 
-    const level =
-      maxCount === 0
-        ? "low"
-        : item.count === maxCount
-        ? "busy"
-        : item.count <= maxCount / 3
-        ? "low"
-        : "medium";
+   const level =
+  item.count === 0
+    ? "no-data"
+    : item.count === maxCount
+    ? "busy"
+    : item.count <= maxCount / 3
+    ? "low"
+    : "medium";
 
     const displayHour = item.hour % 12 || 12;
     const period = item.hour >= 12 ? "PM" : "AM";
@@ -1403,10 +1431,15 @@ useEffect(() => {
 ></div>
 
         <small>
-          {level.charAt(0).toUpperCase() + level.slice(1)}
-          {" · "}
-          {item.count} tokens
-        </small>
+  {item.count === 0
+    ? "No Data"
+    : level.charAt(0).toUpperCase() + level.slice(1)}
+  {" · "}
+  {item.count} activities
+</small>
+        <small>
+  Created: {item.createdCount} | Completed: {item.completedCount}
+</small>
       </div>
     );
   })}
@@ -1505,17 +1538,56 @@ useEffect(() => {
     </div>
   );
 }
+function ProtectedAdminRoute({ children }) {
+  const token = localStorage.getItem("queuewiseToken");
+
+  let user = null;
+
+  try {
+    user = JSON.parse(localStorage.getItem("queuewiseUser"));
+  } catch {
+    user = null;
+  }
+
+  if (!token || user?.role !== "admin") {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  return children;
+}
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/admin/queue" element={<AdminQueue />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+  <Route path="/" element={<Home />} />
+
+  <Route path="/login" element={<Login />} />
+  <Route path="/register" element={<Register />} />
+  <Route path="/history" element={<QueueHistory />} />
+
+  <Route path="/admin/login" element={<AdminLogin />} />
+
+  <Route
+    path="/admin/queue"
+    element={
+      <ProtectedAdminRoute>
+        <AdminQueue />
+      </ProtectedAdminRoute>
+    }
+  />
+
+  <Route
+    path="/admin/reports"
+    element={
+      <ProtectedAdminRoute>
+        <AdminReports />
+      </ProtectedAdminRoute>
+    }
+  />
+
+  <Route path="*" element={<Navigate to="/" replace />} />
+</Routes>
     </BrowserRouter>
   );
 }

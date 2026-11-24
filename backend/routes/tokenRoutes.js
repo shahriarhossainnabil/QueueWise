@@ -4,6 +4,10 @@ const Counter = require("../models/Counter");
 const express = require("express");
 const router = express.Router();
 const Token = require("../models/Token");
+const {
+  authenticateToken,
+  requireAdmin,
+} = require("../middleware/authMiddleware");
 
 // Test route
 router.get("/test", (req, res) => {
@@ -92,7 +96,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-  
+
 
 
 // MODULE 1: Queue Position Tracking
@@ -152,7 +156,11 @@ router.get("/position", async (req, res) => {
 });
 
 // MODULE 2: Start Service
-router.patch("/start/:tokenNumber", async (req, res) => {
+router.patch(
+  "/start/:tokenNumber",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
   try {
     const { tokenNumber } = req.params;
 
@@ -203,7 +211,11 @@ router.patch("/start/:tokenNumber", async (req, res) => {
 });
 
 // MODULE 2: Complete Service & Calculate Duration
-router.patch("/complete/:tokenNumber", async (req, res) => {
+router.patch(
+  "/complete/:tokenNumber",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
   try {
     const { tokenNumber } = req.params;
 
@@ -465,6 +477,8 @@ router.get("/estimate", async (req, res) => {
 // Busy / Free Day & Time Analysis
 
 // Busy / Free Day & Time Analysis
+
+// Busy / Free Day & Time Analysis
 router.get("/visit-analysis", async (req, res) => {
   try {
     const tokens = await Token.find({
@@ -479,18 +493,25 @@ router.get("/visit-analysis", async (req, res) => {
     }
 
     const dayData = {};
-    const hourData = {};
+    const createdByHour = {};
+    const completedByHour = {};
+    const activityByHour = {};
 
-    tokens.forEach((token) => {
-      const date = new Date(token.createdAt);
+    // Initialize hourly data
+    for (let hour = 0; hour < 24; hour++) {
+      createdByHour[hour] = 0;
+      completedByHour[hour] = 0;
+      activityByHour[hour] = 0;
+    }
 
-      // Bangladesh timezone
-      const day = new Intl.DateTimeFormat("en-US", {
+    const getDay = (date) =>
+      new Intl.DateTimeFormat("en-US", {
         weekday: "long",
         timeZone: "Asia/Dhaka",
       }).format(date);
 
-      const hour = Number(
+    const getHour = (date) =>
+      Number(
         new Intl.DateTimeFormat("en-US", {
           hour: "2-digit",
           hourCycle: "h23",
@@ -498,8 +519,42 @@ router.get("/visit-analysis", async (req, res) => {
         }).format(date)
       );
 
-      dayData[day] = (dayData[day] || 0) + 1;
-      hourData[hour] = (hourData[hour] || 0) + 1;
+    // Analyze token creation and service completion
+    tokens.forEach((token) => {
+      // Token Created
+      if (token.createdAt) {
+        const createdDate = new Date(token.createdAt);
+
+        if (!isNaN(createdDate.getTime())) {
+          const createdHour = getHour(createdDate);
+          const createdDay = getDay(createdDate);
+
+          createdByHour[createdHour]++;
+          activityByHour[createdHour]++;
+
+          dayData[createdDay] =
+            (dayData[createdDay] || 0) + 1;
+        }
+      }
+
+      // Service Completed
+      if (
+        token.status === "Completed" &&
+        token.serviceEndTime
+      ) {
+        const completedDate = new Date(token.serviceEndTime);
+
+        if (!isNaN(completedDate.getTime())) {
+          const completedHour = getHour(completedDate);
+          const completedDay = getDay(completedDate);
+
+          completedByHour[completedHour]++;
+          activityByHour[completedHour]++;
+
+          dayData[completedDay] =
+            (dayData[completedDay] || 0) + 1;
+        }
+      }
     });
 
     // Find busiest day
@@ -508,60 +563,65 @@ router.get("/visit-analysis", async (req, res) => {
     )[0];
 
     // Find busiest hour
-    const busiestHour = Object.entries(hourData).sort(
+    const busiestHour = Object.entries(activityByHour).sort(
       (a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0])
     )[0];
 
-    // Find least busy hour from observed hours
-    // Find the least busy hour within reasonable visiting hours (8 AM - 8 PM)
-const reasonableHours = Array.from(
+    // Find least busy hour with actual historical data
+const observedHours = Array.from(
   { length: 13 },
-  (_, index) => {
-    const hour = index + 8;
+  (_, index) => index + 8
+).filter((hour) => activityByHour[hour] > 0);
+const formatHour = (hour) => {
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
 
-    return [
-      hour,
-      hourData[hour] || 0,
-    ];
-  }
-);
+  return `${displayHour}:00 ${period}`;
+};
 
-const leastBusyHour = reasonableHours.sort(
-  (a, b) => a[1] - b[1] || a[0] - b[0]
-)[0];
+const leastBusyHour = observedHours.length > 0
+  ? observedHours
+      .map((hour) => [hour, activityByHour[hour]])
+      .sort((a, b) => a[1] - b[1] || a[0] - b[0])[0]
+  : null;
 
-    const formatHour = (hour) => {
-      const period = hour >= 12 ? "PM" : "AM";
-      const displayHour = hour % 12 || 12;
-      return `${displayHour}:00 ${period}`;
-    };
+const recommendedVisitTime = leastBusyHour
+  ? formatHour(Number(leastBusyHour[0]))
+  : "Not enough data";
 
-    const recommendedVisitTime = formatHour(
-      Number(leastBusyHour[0])
-    );
-const recommendedHour = Number(leastBusyHour[0]);
-
-const averageData = await Token.aggregate([
-  {
-    $match: {
-      status: "Completed",
-      serviceDuration: { $ne: null },
-    },
-  },
-  {
-    $group: {
-      _id: null,
-      averageServiceTime: {
-        $avg: "$serviceDuration",
+    // Calculate average completed service duration
+    const averageData = await Token.aggregate([
+      {
+        $match: {
+          status: "Completed",
+          serviceDuration: { $ne: null },
+        },
       },
-    },
-  },
-]);
+      {
+        $group: {
+          _id: null,
+          averageServiceTime: {
+            $avg: "$serviceDuration",
+          },
+        },
+      },
+    ]);
 
-const averageServiceTime =
-  averageData.length > 0
-    ? Number(averageData[0].averageServiceTime.toFixed(2))
-    : null;
+    const averageServiceTime =
+      averageData.length > 0
+        ? Number(
+            averageData[0].averageServiceTime.toFixed(2)
+          )
+        : null;
+
+    // Historical activity pattern
+    const hourlyPattern = [9, 11, 13, 15, 17].map((hour) => ({
+      hour,
+      count: activityByHour[hour] || 0,
+      createdCount: createdByHour[hour] || 0,
+      completedCount: completedByHour[hour] || 0,
+    }));
+
     res.status(200).json({
       analysisAvailable: true,
 
@@ -570,17 +630,20 @@ const averageServiceTime =
 
       busiestTime: formatHour(Number(busiestHour[0])),
       busiestTimeCount: busiestHour[1],
+      analysisAvailable: Boolean(leastBusyHour),
 
       leastBusyTime: recommendedVisitTime,
-      leastBusyTimeCount: leastBusyHour[1],
-averageServiceTime,
-hourlyPattern: [9, 11, 13, 15, 17].map((hour) => ({
-  hour,
-  count: hourData[hour] || 0,
-})),
+     leastBusyTimeCount: leastBusyHour ? leastBusyHour[1] : null,
+
+      averageServiceTime,
+
+      hourlyPattern,
+
       recommendedVisitTime,
 
-      message: `Based on historical queue data, ${recommendedVisitTime} has the lowest recorded queue activity among the observed hours.`,
+     message: leastBusyHour
+  ? `Based on recorded activity, ${recommendedVisitTime} is the least busy observed hour.`
+  : "Not enough historical data to recommend a visiting time.",
     });
   } catch (error) {
     res.status(500).json({
@@ -589,8 +652,15 @@ hourlyPattern: [9, 11, 13, 15, 17].map((hour) => ({
     });
   }
 });
+
+
+
 // MODULE 3: Get Active Queue for Staff/Admin
-router.get("/admin/queue", async (req, res) => {
+router.get(
+  "/admin/queue",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
   try {
     const { service } = req.query;
 
@@ -605,8 +675,7 @@ router.get("/admin/queue", async (req, res) => {
 
     const tokens = await Token.find(filter)
       .sort({ createdAt: 1 });
-
-    res.status(200).json({
+       res.status(200).json({
       message: "Active queue fetched successfully.",
       totalTokens: tokens.length,
       tokens
@@ -619,6 +688,255 @@ router.get("/admin/queue", async (req, res) => {
     });
   }
 });
+
+// MODULE 3: Admin Dashboard Statistics
+console.log("ADMIN STATISTICS ROUTE REGISTERED");
+router.get(
+  "/admin/statistics",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+   console.log("ADMIN STATISTICS API CALLED");
+  try {
+    // Overall token statistics
+    const overallStats = await Token.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalTokens: { $sum: 1 },
+
+          waitingTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Waiting"] }, 1, 0]
+            }
+          },
+
+          servingTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Serving"] }, 1, 0]
+            }
+          },
+
+          completedTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Completed"] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Service-wise statistics
+    const serviceStats = await Token.aggregate([
+      {
+        $group: {
+          _id: "$service",
+          totalTokens: { $sum: 1 },
+
+          waiting: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Waiting"] }, 1, 0]
+            }
+          },
+
+          serving: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Serving"] }, 1, 0]
+            }
+          },
+
+          completed: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Completed"] }, 1, 0]
+            }
+          }
+        }
+      },
+      {
+        $sort: { totalTokens: -1 }
+      }
+    ]);
+
+    // Daily statistics for the last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const dailyStats = await Token.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAt",
+              timezone: "Asia/Dhaka"
+            }
+          },
+          totalTokens: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    res.status(200).json({
+      message: "Admin statistics fetched successfully.",
+
+      overallStats: overallStats[0] || {
+        totalTokens: 0,
+        waitingTokens: 0,
+        servingTokens: 0,
+        completedTokens: 0
+      },
+
+      serviceStats,
+      dailyStats
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch admin statistics.",
+      error: error.message
+    });
+  }
+});
+
+// MODULE 3: Admin Queue History & Service Reports
+router.get(
+  "/admin/reports",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+  try {
+    const { service } = req.query;
+
+    // Optional service filter
+    const filter = {};
+
+    if (service) {
+      filter.service = service;
+    }
+
+    // Overall report statistics
+    const overallStats = await Token.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalTokens: { $sum: 1 },
+
+          completedTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Completed"] }, 1, 0]
+            }
+          },
+
+          waitingTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Waiting"] }, 1, 0]
+            }
+          },
+
+          servingTokens: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Serving"] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Service-wise reports
+    const serviceStats = await Token.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: "$service",
+          totalTokens: { $sum: 1 },
+
+          completed: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Completed"] }, 1, 0]
+            }
+          },
+
+          waiting: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Waiting"] }, 1, 0]
+            }
+          },
+
+          serving: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "Serving"] }, 1, 0]
+            }
+          },
+
+          averageServiceDuration: {
+            $avg: {
+              $cond: [
+                { $eq: ["$status", "Completed"] },
+                "$serviceDuration",
+                null
+              ]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          service: "$_id",
+          totalTokens: 1,
+          completed: 1,
+          waiting: 1,
+          serving: 1,
+          averageServiceDuration: {
+            $round: [
+              { $ifNull: ["$averageServiceDuration", 0] },
+              2
+            ]
+          }
+        }
+      },
+      { $sort: { totalTokens: -1 } }
+    ]);
+
+    // Complete token history
+    const history = await Token.find(filter)
+      .select(
+        "tokenNumber service userEmail status serviceStartTime serviceEndTime serviceDuration createdAt"
+      )
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      message: "Admin service reports fetched successfully.",
+
+      overallStats: overallStats[0] || {
+        totalTokens: 0,
+        completedTokens: 0,
+        waitingTokens: 0,
+        servingTokens: 0
+      },
+
+      serviceStats,
+      history
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch admin reports.",
+      error: error.message
+    });
+  }
+});
+
 
 
 
@@ -633,9 +951,11 @@ router.get("/", async (req, res) => {
       });
     }
 
-    const tokens = await Token.find({ userEmail }).sort({
-      createdAt: -1,
-    });
+   const tokens = await Token.find({ userEmail })
+  .select(
+    "tokenNumber service status serviceStartTime serviceEndTime serviceDuration createdAt"
+  )
+  .sort({ createdAt: -1 });
 
     res.status(200).json({ tokens });
   } catch (error) {
@@ -645,5 +965,11 @@ router.get("/", async (req, res) => {
     });
   }
 });
+console.log(
+  "STATISTICS ROUTE CHECK:",
+  router.stack
+    .filter((layer) => layer.route)
+    .map((layer) => layer.route.path)
+);
 
 module.exports = router;

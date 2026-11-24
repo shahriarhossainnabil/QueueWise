@@ -1,5 +1,8 @@
+
 const express = require("express");
 const User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const router = express.Router();
 
@@ -8,15 +11,23 @@ router.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check if all fields are provided
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "Please provide name, email and password",
       });
     }
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingUser) {
       return res.status(400).json({
@@ -24,11 +35,13 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Create new user
+    // Hash password before saving
+    const hashedPassword = await bcrypt.hash(password, 12);
+
     const newUser = new User({
       name,
-      email,
-      password,
+      email: normalizedEmail,
+      password: hashedPassword,
     });
 
     await newUser.save();
@@ -38,6 +51,7 @@ router.post("/register", async (req, res) => {
       user: {
         name: newUser.name,
         email: newUser.email,
+        role: newUser.role,
       },
     });
   } catch (error) {
@@ -48,7 +62,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-module.exports = router;
 // User Login
 router.post("/login", async (req, res) => {
   try {
@@ -60,7 +73,11 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (!user) {
       return res.status(401).json({
@@ -68,17 +85,45 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (user.password !== password) {
+    let isPasswordValid = false;
+
+    // Support old plain-text passwords and new hashed passwords
+    if (user.password.startsWith("$2")) {
+      isPasswordValid = await bcrypt.compare(password, user.password);
+    } else {
+      isPasswordValid = user.password === password;
+
+      // Upgrade old password to bcrypt hash after successful login
+      if (isPasswordValid) {
+        user.password = await bcrypt.hash(password, 12);
+        await user.save();
+      }
+    }
+
+    if (!isPasswordValid) {
       return res.status(401).json({
         message: "Invalid email or password",
       });
     }
 
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
     res.status(200).json({
       message: "Login successful",
+      token,
       user: {
         name: user.name,
         email: user.email,
+        role: user.role || "user",
       },
     });
   } catch (error) {
@@ -88,4 +133,7 @@ router.post("/login", async (req, res) => {
     });
   }
 });
+
 console.log("User routes loaded successfully");
+
+module.exports = router;

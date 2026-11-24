@@ -33,23 +33,25 @@ app.get("/server-test", (req, res) => {
 app.get("/test-route", (req, res) => {
   res.send("TEST ROUTE WORKS");
 });
+
 app.use("/api/users", userRoutes);
+
+// Request Logger
 app.use((req, res, next) => {
   console.log("REQUEST RECEIVED:", req.method, req.originalUrl);
   next();
 });
-app.use((req, res, next) => {
-  console.log("REQUEST RECEIVED:", req.method, req.originalUrl);
-  next();
-});
+
+// Token routes
 app.use("/api/tokens", tokenRoutes);
+
+// Debug route
 app.get("/debug-routes", (req, res) => {
   res.json({
     message: "Debug route is working",
     tokenRoutesLoaded: true
   });
 });
-
 // MongoDB Connection
 mongoose
   .connect(process.env.MONGO_URI)
